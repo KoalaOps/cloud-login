@@ -89,7 +89,7 @@ runs:
           exit 1
         fi
         
-        echo "= Authenticating to $PROVIDER..."
+        echo "= Authenticating to $PROVIDER..."
     
     # AWS Authentication
     - name: Login to AWS
@@ -271,7 +271,7 @@ runs:
       run: |
         echo "authenticated=true" >> $GITHUB_OUTPUT
         
-        echo "### Cloud Authentication Summary " >> $GITHUB_STEP_SUMMARY
+        echo "### Cloud Authentication Summary " >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
         echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
