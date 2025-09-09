@@ -1,18 +1,16 @@
-name: 'Cloud Login'
-description: 'Unified cloud authentication with Kubernetes cluster setup'
-author: 'KoalaOps'
+name: Koala Cloud Login
+description: |
+  Unified cloud authentication with Kubernetes cluster setup.
+author: "KoalaOps"
 
 branding:
-  icon: 'cloud'
-  color: 'purple'
+  icon: "tag"
+  color: "purple"
 
 inputs:
-  # Cloud provider selection
   provider:
     description: 'Cloud provider (aws, gcp, azure)'
     required: true
-  
-  # Common inputs
   region:
     description: 'Cloud region/location'
     required: true
@@ -22,8 +20,6 @@ inputs:
   account:
     description: 'Account/Project ID'
     required: false
-  
-  # Container registry
   enable_container_registry:
     description: 'Enable container registry login (ECR/GAR/ACR based on provider)'
     required: false
@@ -31,8 +27,6 @@ inputs:
   repositories:
     description: 'Repositories to ensure exist (comma-separated, AWS ECR only)'
     required: false
-  
-  # AWS specific
   aws_role_to_assume:
     description: 'AWS IAM role to assume (OIDC)'
     required: false
@@ -46,8 +40,6 @@ inputs:
     description: 'AWS session duration in seconds'
     required: false
     default: '3600'
-  
-  # GCP specific
   gcp_credentials_json:
     description: 'GCP service account JSON'
     required: false
@@ -57,8 +49,6 @@ inputs:
   gcp_service_account:
     description: 'GCP service account email'
     required: false
-  
-  # Azure specific (beta)
   azure_client_id:
     description: 'Azure client ID (service principal)'
     required: false
@@ -73,9 +63,6 @@ inputs:
     required: false
 
 outputs:
-  provider:
-    description: 'Cloud provider used'
-    value: ${{ inputs.provider }}
   account_id:
     description: 'Cloud account/project ID'
     value: ${{ steps.account.outputs.id }}
