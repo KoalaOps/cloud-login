@@ -33,7 +33,7 @@ Universal cloud authentication action that handles AWS, GCP, and Azure (beta) wi
 | `account` | Account/Project/Subscription ID | ❌ | - |
 | `region` | Region/Location | ✅ | - |
 | `cluster` | Kubernetes cluster name | ❌ | - |
-| `enable_container_registry` | Enable container registry login | ❌ | `false` |
+| `login_to_container_registry` | Enable container registry login | ❌ | `false` |
 
 **Note for Azure:** The `repositories` input expects the ACR registry name (e.g., "myregistry"), not a list of repositories.
 
@@ -90,7 +90,7 @@ Universal cloud authentication action that handles AWS, GCP, and Azure (beta) wi
     region: us-east-1
     cluster: eks-production
     aws_role_to_assume: ${{ vars.AWS_ROLE }}
-    enable_container_registry: true
+    login_to_container_registry: true
     repositories: backend,frontend
 ```
 
@@ -105,7 +105,7 @@ Universal cloud authentication action that handles AWS, GCP, and Azure (beta) wi
     cluster: gke-cluster
     gcp_workload_identity_provider: ${{ vars.WIF_PROVIDER }}
     gcp_service_account: ${{ vars.WIF_SA }}
-    enable_container_registry: true
+    login_to_container_registry: true
 ```
 
 ### Azure with Service Principal (Beta)
@@ -120,7 +120,7 @@ Universal cloud authentication action that handles AWS, GCP, and Azure (beta) wi
     azure_client_id: ${{ secrets.AZURE_CLIENT_ID }}
     azure_client_secret: ${{ secrets.AZURE_CLIENT_SECRET }}
     azure_tenant_id: ${{ vars.AZURE_TENANT_ID }}
-    enable_container_registry: true
+    login_to_container_registry: true
     repositories: myacrregistry  # ACR registry name
 ```
 
@@ -134,7 +134,7 @@ Universal cloud authentication action that handles AWS, GCP, and Azure (beta) wi
     region: my-resource-group  # Resource group for AKS
     cluster: aks-cluster
     # No credentials needed - uses managed identity
-    enable_container_registry: true
+    login_to_container_registry: true
 ```
 
 ### Parse tuple and authenticate

@@ -20,8 +20,8 @@ inputs:
   account:
     description: 'Account/Project ID'
     required: false
-  enable_container_registry:
-    description: 'Enable container registry login (ECR/GAR/ACR based on provider)'
+  login_to_container_registry:
+    description: 'Login to container registry (ECR/GAR/ACR) after cloud authentication'
     required: false
     default: 'false'
   repositories:
@@ -99,7 +99,7 @@ runs:
         aws_region: ${{ inputs.region }}
         role_to_assume: ${{ inputs.aws_role_to_assume }}
         role_duration: ${{ inputs.aws_session_duration }}
-        enable_ecr_login: ${{ inputs.enable_container_registry }}
+        enable_ecr_login: ${{ inputs.login_to_container_registry }}
         eks_cluster_name: ${{ inputs.cluster }}
         ecr_repositories: ${{ inputs.repositories }}
     
@@ -130,7 +130,7 @@ runs:
         project_id: ${{ inputs.account }}
         location: ${{ inputs.region }}
         cluster_name: ${{ inputs.cluster }}
-        skip_gar_login: ${{ inputs.enable_container_registry != 'true' }}
+        skip_gar_login: ${{ inputs.login_to_container_registry != 'true' }}
     
     - name: Login to GCP without GKE
       if: inputs.provider == 'gcp' && inputs.cluster == ''
@@ -148,7 +148,7 @@ runs:
         project_id: ${{ inputs.account }}
     
     - name: Configure Docker for GAR
-      if: inputs.provider == 'gcp' && inputs.enable_container_registry == 'true' && inputs.cluster == ''
+      if: inputs.provider == 'gcp' && inputs.login_to_container_registry == 'true' && inputs.cluster == ''
       shell: bash
       run: |
         # Determine registry based on region
@@ -189,7 +189,7 @@ runs:
         subscription-id: ${{ inputs.azure_subscription_id || inputs.account }}
     
     - name: Login to ACR
-      if: inputs.provider == 'azure' && inputs.enable_container_registry == 'true'
+      if: inputs.provider == 'azure' && inputs.login_to_container_registry == 'true'
       shell: bash
       run: |
         # Extract ACR name from cluster or use default
@@ -228,10 +228,10 @@ runs:
       run: |
         PROVIDER="${{ inputs.provider }}"
         
-        if [[ "$PROVIDER" == "aws" && "${{ inputs.enable_container_registry }}" == "true" ]]; then
+        if [[ "$PROVIDER" == "aws" && "${{ inputs.login_to_container_registry }}" == "true" ]]; then
           ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
           REGISTRY="$ACCOUNT.dkr.ecr.${{ inputs.region }}.amazonaws.com"
-        elif [[ "$PROVIDER" == "gcp" && "${{ inputs.enable_container_registry }}" == "true" ]]; then
+        elif [[ "$PROVIDER" == "gcp" && "${{ inputs.login_to_container_registry }}" == "true" ]]; then
           if [[ "${{ inputs.region }}" == us-* ]]; then
             REGISTRY="us-docker.pkg.dev/${{ inputs.account }}"
           elif [[ "${{ inputs.region }}" == europe-* ]]; then
@@ -241,7 +241,7 @@ runs:
           else
             REGISTRY="${{ inputs.region }}-docker.pkg.dev/${{ inputs.account }}"
           fi
-        elif [[ "$PROVIDER" == "azure" && "${{ inputs.enable_container_registry }}" == "true" ]]; then
+        elif [[ "$PROVIDER" == "azure" && "${{ inputs.login_to_container_registry }}" == "true" ]]; then
           # For Azure, construct ACR URL
           ACR_NAME="${CLUSTER_NAME}acr"
           if [[ -n "${{ inputs.repositories }}" ]]; then
