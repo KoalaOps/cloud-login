@@ -25,7 +25,7 @@ inputs:
     required: false
     default: 'false'
   repositories:
-    description: 'Repositories to ensure exist (comma-separated, AWS ECR only)'
+    description: 'AWS ECR: Repositories to ensure exist (comma-separated). Azure: ACR registry name (e.g., "myregistry")'
     required: false
   aws_role_to_assume:
     description: 'AWS IAM role to assume (OIDC)'

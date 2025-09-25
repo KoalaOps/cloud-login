@@ -34,8 +34,7 @@ Universal cloud authentication action that handles AWS, GCP, Azure (beta), GitHu
 | `region` | Region/Location (not required for github/dockerhub) | ❌* | - |
 | `cluster` | Kubernetes cluster name | ❌ | - |
 | `login_to_container_registry` | Enable container registry login | ❌ | `false` |
-
-**Note for Azure:** The `repositories` input expects the ACR registry name (e.g., "myregistry"), not a list of repositories.
+| `repositories` | AWS: ECR repos to ensure exist (comma-separated)<br>Azure: ACR registry name (e.g., "myregistry") | ❌ | - |
 
 ### AWS-Specific
 
@@ -44,7 +43,6 @@ Universal cloud authentication action that handles AWS, GCP, Azure (beta), GitHu
 | `aws_role_to_assume` | IAM role ARN for OIDC | ❌* |
 | `aws_access_key_id` | AWS access key | ❌* |
 | `aws_secret_access_key` | AWS secret key | ❌* |
-| `repositories` | AWS: ECR repos to ensure exist. Azure: ACR registry name | ❌ |
 
 *Either use OIDC (role_to_assume) or access keys
 
@@ -190,6 +188,8 @@ Universal cloud authentication action that handles AWS, GCP, Azure (beta), GitHu
     account: ${{ steps.parse_registry.outputs.account }}
     region: ${{ steps.parse_registry.outputs.region }}
     login_to_container_registry: true
+    # For Azure: account output from parse-image-registry is the ACR registry name
+    repositories: ${{ steps.parse_registry.outputs.provider == 'azure' && steps.parse_registry.outputs.account || '' }}
     # Pass all potential auth credentials
     aws_role_to_assume: ${{ vars.AWS_BUILD_ROLE }}
     gcp_workload_identity_provider: ${{ vars.WIF_PROVIDER }}
