@@ -5,12 +5,36 @@ Universal cloud authentication action that handles AWS, GCP, Azure (beta), GitHu
 ## Features
 
 - 🔐 **Multi-cloud support** - AWS, GCP, Azure (beta), GitHub, and Docker Hub in one action
+- 🔍 **Auto-detection from image** - Automatically detect provider/registry from Docker image URL
 - ☸️ **Automatic kubectl setup** - Configures kubeconfig for your cluster
 - 🐳 **Registry authentication** - ECR, GAR, ACR, GHCR, Docker Hub login
 - 📦 **ECR repository creation** - Ensures repositories exist (AWS)
 - 🔄 **Cross-account support** - Handle multi-account setups
 
 ## Usage
+
+### Single-Step Authentication (Recommended)
+
+Pass an image URL and let the action auto-detect the provider and registry:
+
+```yaml
+- name: Authenticate and login to registry
+  uses: KoalaOps/cloud-login@v1
+  with:
+    image: 123456789.dkr.ecr.us-east-1.amazonaws.com/my-service
+    login_to_container_registry: true
+    # Pass all potential auth credentials - only the detected provider's will be used
+    aws_role_to_assume: ${{ vars.AWS_BUILD_ROLE }}
+    gcp_workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+    gcp_service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+    azure_client_id: ${{ secrets.AZURE_CLIENT_ID }}
+    azure_client_secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+    azure_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
+```
+
+### Explicit Provider Configuration
+
+Directly specify the provider and settings:
 
 ```yaml
 - name: Authenticate to cloud and cluster
@@ -29,12 +53,16 @@ Universal cloud authentication action that handles AWS, GCP, Azure (beta), GitHu
 
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
-| `provider` | Cloud provider (aws, gcp, azure, github, dockerhub) | ✅ | - |
+| `image` | Docker image URL to auto-detect provider and registry | ❌* | - |
+| `provider` | Cloud provider (aws, gcp, azure, github, dockerhub) | ❌* | - |
 | `account` | Account/Project/Subscription ID | ❌ | - |
-| `region` | Region/Location (not required for github/dockerhub) | ❌* | - |
+| `region` | Region/Location (not required for github/dockerhub) | ❌ | - |
 | `cluster` | Kubernetes cluster name | ❌ | - |
 | `login_to_container_registry` | Enable container registry login | ❌ | `false` |
-| `repositories` | AWS: ECR repos to ensure exist (comma-separated)<br>Azure: ACR registry name (e.g., "myregistry") | ❌ | - |
+| `repositories` | AWS ECR: Repositories to ensure exist (comma-separated) | ❌ | - |
+| `acr_registry` | Azure: ACR registry name (e.g., "myregistry") | ❌ | - |
+
+*Either `image` or `provider` must be specified
 
 ### AWS-Specific
 
@@ -95,7 +123,42 @@ Universal cloud authentication action that handles AWS, GCP, Azure (beta), GitHu
 
 ## Examples
 
-### AWS with OIDC and ECR
+### Single-Step with Image Auto-Detection
+
+#### AWS ECR
+```yaml
+- name: Login via image URL
+  uses: KoalaOps/cloud-login@v1
+  with:
+    image: 123456789.dkr.ecr.us-east-1.amazonaws.com/my-service
+    login_to_container_registry: true
+    aws_role_to_assume: ${{ vars.AWS_ROLE }}
+```
+
+#### GCP Artifact Registry
+```yaml
+- name: Login via image URL
+  uses: KoalaOps/cloud-login@v1
+  with:
+    image: us-central1-docker.pkg.dev/my-project/my-registry/my-service
+    login_to_container_registry: true
+    gcp_workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+    gcp_service_account: ${{ vars.WIF_SA }}
+```
+
+#### GitHub Container Registry
+```yaml
+- name: Login via image URL
+  uses: KoalaOps/cloud-login@v1
+  with:
+    image: ghcr.io/myorg/my-service:latest  # Tags are automatically stripped
+    login_to_container_registry: true
+    # Uses GITHUB_TOKEN by default
+```
+
+### Explicit Provider Configuration
+
+#### AWS with OIDC and ECR
 ```yaml
 - name: Login to AWS
   uses: KoalaOps/cloud-login@v1
@@ -109,7 +172,7 @@ Universal cloud authentication action that handles AWS, GCP, Azure (beta), GitHu
     repositories: backend,frontend
 ```
 
-### GCP with Workload Identity
+#### GCP with Workload Identity
 ```yaml
 - name: Login to GCP
   uses: KoalaOps/cloud-login@v1
@@ -123,7 +186,7 @@ Universal cloud authentication action that handles AWS, GCP, Azure (beta), GitHu
     login_to_container_registry: true
 ```
 
-### Azure with Service Principal (Beta)
+#### Azure with Service Principal (Beta)
 ```yaml
 - name: Login to Azure
   uses: KoalaOps/cloud-login@v1
@@ -136,10 +199,10 @@ Universal cloud authentication action that handles AWS, GCP, Azure (beta), GitHu
     azure_client_secret: ${{ secrets.AZURE_CLIENT_SECRET }}
     azure_tenant_id: ${{ vars.AZURE_TENANT_ID }}
     login_to_container_registry: true
-    repositories: myacrregistry  # ACR registry name
+    acr_registry: myacrregistry  # ACR registry name
 ```
 
-### Azure with Managed Identity (Beta)
+#### Azure with Managed Identity (Beta)
 ```yaml
 - name: Login to Azure with MI
   uses: KoalaOps/cloud-login@v1
@@ -152,7 +215,7 @@ Universal cloud authentication action that handles AWS, GCP, Azure (beta), GitHu
     login_to_container_registry: true
 ```
 
-### GitHub Container Registry
+#### GitHub Container Registry
 ```yaml
 - name: Login to GHCR
   uses: KoalaOps/cloud-login@v1
@@ -162,7 +225,7 @@ Universal cloud authentication action that handles AWS, GCP, Azure (beta), GitHu
     # Uses GITHUB_TOKEN by default
 ```
 
-### Docker Hub
+#### Docker Hub
 ```yaml
 - name: Login to Docker Hub
   uses: KoalaOps/cloud-login@v1
@@ -173,7 +236,7 @@ Universal cloud authentication action that handles AWS, GCP, Azure (beta), GitHu
     dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
 ```
 
-### Parse image registry and authenticate
+### Two-Step: Parse and Authenticate
 ```yaml
 - name: Parse image registry
   id: parse_registry
@@ -189,7 +252,9 @@ Universal cloud authentication action that handles AWS, GCP, Azure (beta), GitHu
     region: ${{ steps.parse_registry.outputs.region }}
     login_to_container_registry: true
     # For Azure: account output from parse-image-registry is the ACR registry name
-    repositories: ${{ steps.parse_registry.outputs.provider == 'azure' && steps.parse_registry.outputs.account || '' }}
+    acr_registry: ${{ steps.parse_registry.outputs.provider == 'azure' && steps.parse_registry.outputs.account || '' }}
+    # For AWS ECR: repositories to ensure exist
+    repositories: ${{ steps.parse_registry.outputs.provider == 'aws' && steps.parse_registry.outputs.repository || '' }}
     # Pass all potential auth credentials
     aws_role_to_assume: ${{ vars.AWS_BUILD_ROLE }}
     gcp_workload_identity_provider: ${{ vars.WIF_PROVIDER }}
