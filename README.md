@@ -1,12 +1,12 @@
 # Cloud Login
 
-Universal cloud authentication action that handles AWS, GCP, and Azure (beta) with automatic cluster and registry setup.
+Universal cloud authentication action that handles AWS, GCP, Azure (beta), GitHub, and Docker Hub with automatic cluster and registry setup.
 
 ## Features
 
-- 🔐 **Multi-cloud support** - AWS, GCP, and Azure (beta) in one action
+- 🔐 **Multi-cloud support** - AWS, GCP, Azure (beta), GitHub, and Docker Hub in one action
 - ☸️ **Automatic kubectl setup** - Configures kubeconfig for your cluster
-- 🐳 **Registry authentication** - ECR, GAR, ACR login
+- 🐳 **Registry authentication** - ECR, GAR, ACR, GHCR, Docker Hub login
 - 📦 **ECR repository creation** - Ensures repositories exist (AWS)
 - 🔄 **Cross-account support** - Handle multi-account setups
 
@@ -29,9 +29,9 @@ Universal cloud authentication action that handles AWS, GCP, and Azure (beta) wi
 
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
-| `provider` | Cloud provider (aws, gcp, azure) | ✅ | - |
+| `provider` | Cloud provider (aws, gcp, azure, github, dockerhub) | ✅ | - |
 | `account` | Account/Project/Subscription ID | ❌ | - |
-| `region` | Region/Location | ✅ | - |
+| `region` | Region/Location (not required for github/dockerhub) | ❌* | - |
 | `cluster` | Kubernetes cluster name | ❌ | - |
 | `login_to_container_registry` | Enable container registry login | ❌ | `false` |
 
@@ -68,6 +68,23 @@ Universal cloud authentication action that handles AWS, GCP, and Azure (beta) wi
 | `azure_subscription_id` | Azure subscription ID | ❌ |
 
 *Either use managed identity (no credentials) or service principal
+
+### GitHub Container Registry
+
+| Input | Description | Required |
+|-------|-------------|----------|
+| `github_token` | GitHub token for GHCR auth | ❌ |
+
+*Defaults to `GITHUB_TOKEN` if not provided
+
+### Docker Hub
+
+| Input | Description | Required |
+|-------|-------------|----------|
+| `dockerhub_username` | Docker Hub username | ✅* |
+| `dockerhub_token` | Docker Hub access token | ✅* |
+
+*Required when provider is dockerhub and login_to_container_registry is true
 
 ## Outputs
 
@@ -137,6 +154,54 @@ Universal cloud authentication action that handles AWS, GCP, and Azure (beta) wi
     login_to_container_registry: true
 ```
 
+### GitHub Container Registry
+```yaml
+- name: Login to GHCR
+  uses: KoalaOps/cloud-login@v1
+  with:
+    provider: github
+    login_to_container_registry: true
+    # Uses GITHUB_TOKEN by default
+```
+
+### Docker Hub
+```yaml
+- name: Login to Docker Hub
+  uses: KoalaOps/cloud-login@v1
+  with:
+    provider: dockerhub
+    login_to_container_registry: true
+    dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
+    dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
+```
+
+### Parse image registry and authenticate
+```yaml
+- name: Parse image registry
+  id: parse_registry
+  uses: KoalaOps/parse-image-registry@v1
+  with:
+    image: ${{ env.IMAGE }}
+
+- name: Authenticate and login to registry
+  uses: KoalaOps/cloud-login@v1
+  with:
+    provider: ${{ steps.parse_registry.outputs.provider }}
+    account: ${{ steps.parse_registry.outputs.account }}
+    region: ${{ steps.parse_registry.outputs.region }}
+    login_to_container_registry: true
+    # Pass all potential auth credentials
+    aws_role_to_assume: ${{ vars.AWS_BUILD_ROLE }}
+    gcp_workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+    gcp_service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+    azure_client_id: ${{ secrets.AZURE_CLIENT_ID }}
+    azure_client_secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+    azure_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
+    github_token: ${{ secrets.GITHUB_TOKEN }}
+    dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
+    dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
+```
+
 ### Parse tuple and authenticate
 ```yaml
 - name: Parse cloud config
@@ -168,6 +233,12 @@ Universal cloud authentication action that handles AWS, GCP, and Azure (beta) wi
 1. **Managed Identity (Recommended)**: No credentials needed
 2. **Service Principal**: Use client ID, secret, and tenant
 
+### GitHub Container Registry
+1. **GitHub Token**: Uses `GITHUB_TOKEN` by default or custom token
+
+### Docker Hub
+1. **Access Token**: Requires username and access token
+
 ## Building Blocks Used
 
 This orchestrator action internally uses:
@@ -187,6 +258,12 @@ This orchestrator action internally uses:
 - `azure/login@v2` - Azure authentication
 - `azure/aks-set-context@v4` - AKS cluster setup
 - Azure CLI for ACR login
+
+### For GitHub Container Registry
+- `docker/login-action@v3` - Docker registry login with GHCR
+
+### For Docker Hub
+- `docker/login-action@v3` - Docker Hub authentication
 
 ## Notes
 
