@@ -1,6 +1,6 @@
 name: Koala Cloud Login
 description: |
-  Unified cloud authentication with Kubernetes cluster setup.
+  Unified cloud authentication with optional Kubernetes context and registry login.
 author: "KoalaOps"
 
 branding:
@@ -8,377 +8,368 @@ branding:
   color: "purple"
 
 inputs:
+  # Discovery & routing
   image:
-    description: 'Docker image URL to auto-detect provider and registry (alternative to explicit provider/account/region)'
+    description: "Docker image URL to auto-detect provider/account/location/registry"
     required: false
   provider:
-    description: 'Cloud provider (aws, gcp, azure, github, dockerhub) - auto-detected if image is provided'
+    description: "Cloud provider (aws, gcp, azure, github, dockerhub) - auto-detected if image is provided"
     required: false
-  region:
-    description: 'Cloud region/location (not required for github/dockerhub)'
+
+  # Unified location & identifiers
+  account:
+    description: "AWS account ID / GCP project ID / Azure subscription ID"
+    required: false
+  location:
+    description: "AWS region (e.g., us-east-1) or GCP location (e.g., us|europe|asia|us-central1|us-central1-a). Not used for Azure."
     required: false
   cluster:
-    description: 'Kubernetes cluster name'
+    description: "Kubernetes cluster name (EKS/GKE/AKS)"
     required: false
-  account:
-    description: 'Account/Project ID'
-    required: false
+
+  # Registry controls
   login_to_container_registry:
-    description: 'Login to container registry (ECR/GAR/ACR) after cloud authentication'
+    description: "Login to container registry (ECR/GAR/ACR/GHCR/Docker Hub)"
     required: false
-    default: 'false'
+    default: "false"
   repositories:
-    description: 'AWS ECR: Repositories to ensure exist (comma-separated)'
+    description: "AWS ECR: repositories to ensure exist (comma-separated)"
     required: false
   acr_registry:
-    description: 'Azure ACR registry name (e.g., "myregistry") - auto-detected if image is provided'
+    description: "Azure ACR registry name (e.g., 'myacrname')"
     required: false
+
+  # AWS auth
   aws_role_to_assume:
-    description: 'AWS IAM role to assume (OIDC)'
+    description: "AWS IAM role ARN to assume (OIDC recommended)"
     required: false
   aws_access_key_id:
-    description: 'AWS Access Key ID (if not using OIDC)'
+    description: "AWS Access Key ID (if not using OIDC)"
     required: false
   aws_secret_access_key:
-    description: 'AWS Secret Access Key (if not using OIDC)'
+    description: "AWS Secret Access Key (if not using OIDC)"
     required: false
   aws_session_duration:
-    description: 'AWS session duration in seconds'
+    description: "AWS session duration in seconds"
     required: false
-    default: '3600'
+    default: "3600"
+
+  # GCP auth
   gcp_credentials_json:
-    description: 'GCP service account JSON'
+    description: "GCP Service Account JSON"
     required: false
   gcp_workload_identity_provider:
-    description: 'GCP Workload Identity Provider'
+    description: "GCP Workload Identity Provider resource name"
     required: false
   gcp_service_account:
-    description: 'GCP service account email'
+    description: "GCP Service Account email"
     required: false
+
+  # Azure auth
   azure_client_id:
-    description: 'Azure client ID (service principal)'
+    description: "Azure client ID (Service Principal)"
     required: false
   azure_client_secret:
-    description: 'Azure client secret (service principal)'
+    description: "Azure client secret (Service Principal)"
     required: false
   azure_tenant_id:
-    description: 'Azure tenant ID'
+    description: "Azure tenant ID"
     required: false
-  azure_subscription_id:
-    description: 'Azure subscription ID (defaults to account input)'
+  azure_resource_group:
+    description: "Azure resource group for AKS"
     required: false
+
+  # GHCR / Docker Hub
   github_token:
-    description: 'GitHub token for GHCR authentication (defaults to GITHUB_TOKEN)'
+    description: "GitHub token for GHCR (defaults to GITHUB_TOKEN)"
     required: false
   dockerhub_username:
-    description: 'Docker Hub username'
+    description: "Docker Hub username"
     required: false
   dockerhub_token:
-    description: 'Docker Hub access token'
+    description: "Docker Hub access token"
     required: false
 
 outputs:
   account_id:
-    description: 'Cloud account/project ID'
-    value: ${{ steps.account.outputs.id }}
+    description: "Resolved cloud account/subscription/project ID"
+    value: ${{ steps.out-account.outputs.id }}
   registry_url:
-    description: 'Container registry URL if configured'
-    value: ${{ steps.registry.outputs.url }}
+    description: "Base registry URL if registry login was requested"
+    value: ${{ steps.out-registry.outputs.url }}
   kubectl_context:
-    description: 'Kubernetes context if configured'
-    value: ${{ steps.kubectl.outputs.context }}
+    description: "Current kubectl context if configured"
+    value: ${{ steps.out-kubectl.outputs.context }}
   authenticated:
-    description: 'Whether authentication succeeded'
-    value: ${{ steps.status.outputs.authenticated }}
+    description: "Whether authentication completed successfully"
+    value: ${{ steps.out-status.outputs.authenticated }}
 
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
-    - name: Parse image if provided
+    # 1) Parse image (optional)
+    - name: Parse image
       id: parse
       if: inputs.image != ''
       uses: KoalaOps/parse-image-registry@v1
       with:
         image: ${{ inputs.image }}
-    
-    - name: Determine final provider and settings
+
+    # 2) Determine effective config
+    - name: Determine config
       id: config
       shell: bash
       run: |
-        # Use explicit provider or fall back to auto-detected
-        PROVIDER="${{ inputs.provider }}"
-        if [[ -z "$PROVIDER" && -n "${{ steps.parse.outputs.provider }}" ]]; then
-          PROVIDER="${{ steps.parse.outputs.provider }}"
+        set -Eeuo pipefail
+
+        # Provider resolution (+ mismatch check)
+        INPUT_PROVIDER="${{ inputs.provider }}"
+        PARSED_PROVIDER="${{ steps.parse.outputs.provider || '' }}"
+        if [[ -n "$INPUT_PROVIDER" && -n "$PARSED_PROVIDER" && "$INPUT_PROVIDER" != "$PARSED_PROVIDER" ]]; then
+          echo "::error::Provider mismatch: input='$INPUT_PROVIDER' vs image-detected='$PARSED_PROVIDER'"
+          exit 1
         fi
-        
-        # Use explicit account or fall back to auto-detected
-        ACCOUNT="${{ inputs.account }}"
-        if [[ -z "$ACCOUNT" && -n "${{ steps.parse.outputs.account }}" ]]; then
+        PROVIDER="$INPUT_PROVIDER"
+        if [[ -z "$PROVIDER" && -n "$PARSED_PROVIDER" ]]; then
+          PROVIDER="$PARSED_PROVIDER"
+        fi
+
+        # Account resolution
+        ACCOUNT="${{ inputs.account || '' }}"
+        if [[ -z "$ACCOUNT" && -n "${{ steps.parse.outputs.account || '' }}" ]]; then
           ACCOUNT="${{ steps.parse.outputs.account }}"
         fi
-        
-        # Use explicit region or fall back to auto-detected
-        REGION="${{ inputs.region }}"
-        if [[ -z "$REGION" && -n "${{ steps.parse.outputs.region }}" ]]; then
-          REGION="${{ steps.parse.outputs.region }}"
+
+        # Location resolution (AWS region or GCP location)
+        LOCATION="${{ inputs.location || '' }}"
+        if [[ -z "$LOCATION" && -n "${{ steps.parse.outputs.region || '' }}" ]]; then
+          LOCATION="${{ steps.parse.outputs.region }}"
         fi
-        
-        # For Azure, use explicit ACR registry or auto-detected account (which is the registry name)
-        ACR_REGISTRY="${{ inputs.acr_registry }}"
-        if [[ -z "$ACR_REGISTRY" && "${{ steps.parse.outputs.provider }}" == "azure" ]]; then
+
+        # Azure ACR name (from image if available)
+        ACR_REGISTRY="${{ inputs.acr_registry || '' }}"
+        if [[ -z "$ACR_REGISTRY" && "${PARSED_PROVIDER}" == "azure" && -n "${{ steps.parse.outputs.account || '' }}" ]]; then
+          # parse-image-registry returns registry name in 'account' for Azure
           ACR_REGISTRY="${{ steps.parse.outputs.account }}"
         fi
-        
-        # For AWS ECR, use repositories from input or auto-detected repository
-        REPOSITORIES="${{ inputs.repositories }}"
-        if [[ "${{ steps.parse.outputs.provider }}" == "aws" && -z "$REPOSITORIES" && -n "${{ steps.parse.outputs.repository }}" ]]; then
+
+        # AWS ECR repositories (from image if available)
+        REPOSITORIES="${{ inputs.repositories || '' }}"
+        if [[ -z "$REPOSITORIES" && "${PARSED_PROVIDER}" == "aws" && -n "${{ steps.parse.outputs.repository || '' }}" ]]; then
           REPOSITORIES="${{ steps.parse.outputs.repository }}"
         fi
-        
-        echo "provider=$PROVIDER" >> $GITHUB_OUTPUT
-        echo "account=$ACCOUNT" >> $GITHUB_OUTPUT
-        echo "region=$REGION" >> $GITHUB_OUTPUT
-        echo "acr_registry=$ACR_REGISTRY" >> $GITHUB_OUTPUT
-        echo "repositories=$REPOSITORIES" >> $GITHUB_OUTPUT
-    
+
+        echo "provider=$PROVIDER" >> "$GITHUB_OUTPUT"
+        echo "account=$ACCOUNT" >> "$GITHUB_OUTPUT"
+        echo "location=$LOCATION" >> "$GITHUB_OUTPUT"
+        echo "acr_registry=$ACR_REGISTRY" >> "$GITHUB_OUTPUT"
+        echo "repositories=$REPOSITORIES" >> "$GITHUB_OUTPUT"
+
+    # 3) Minimal validation (pragmatic)
     - name: Validate inputs
       shell: bash
       run: |
+        set -Eeuo pipefail
         PROVIDER="${{ steps.config.outputs.provider }}"
-        REGION="${{ steps.config.outputs.region }}"
-        
+        ACCOUNT="${{ steps.config.outputs.account }}"
+        LOCATION="${{ steps.config.outputs.location }}"
+        CLUSTER="${{ inputs.cluster }}"
+        LOGIN="${{ inputs.login_to_container_registry }}"
+
         if [[ -z "$PROVIDER" ]]; then
-          echo "::error::Provider must be specified either directly or via image parameter"
+          echo "::error::Provide either 'image' or 'provider'."
           exit 1
         fi
-        
-        if [[ "$PROVIDER" != "aws" && "$PROVIDER" != "gcp" && "$PROVIDER" != "azure" && "$PROVIDER" != "github" && "$PROVIDER" != "dockerhub" ]]; then
-          echo "::error::Invalid provider: $PROVIDER. Must be aws, gcp, azure, github, or dockerhub"
-          exit 1
+        case "$PROVIDER" in
+          aws|gcp|azure|github|dockerhub) ;;
+          *) echo "::error::Invalid provider: $PROVIDER"; exit 1 ;;
+        esac
+
+        if [[ "$PROVIDER" == "aws" ]]; then
+          if [[ -z "${{ inputs.aws_role_to_assume }}" && -z "${{ inputs.aws_access_key_id }}" ]]; then
+            echo "::error::For AWS, provide either 'aws_role_to_assume' (OIDC) or access keys."
+            exit 1
+          fi
+          if [[ ( -n "$CLUSTER" || "$LOGIN" == "true" ) && -z "$LOCATION" ]]; then
+            echo "::error::'location' (AWS region) is required for EKS or ECR."
+            exit 1
+          fi
         fi
-        
-        # Region is required for cloud providers but not for github/dockerhub
-        if [[ ("$PROVIDER" == "aws" || "$PROVIDER" == "gcp" || "$PROVIDER" == "azure") && -z "$REGION" ]]; then
-          echo "::error::Region is required for provider: $PROVIDER"
-          exit 1
+
+        if [[ "$PROVIDER" == "gcp" ]]; then
+          if [[ ( -n "$CLUSTER" || "$LOGIN" == "true" ) && ( -z "$LOCATION" || -z "$ACCOUNT" ) ]]; then
+            echo "::error::For GCP GKE/GAR, 'account' (project) and 'location' are required."
+            exit 1
+          fi
         fi
-        
-        echo "= Authenticating to $PROVIDER..."
-    
-    # AWS Authentication
-    - name: Login to AWS
+
+        if [[ "$PROVIDER" == "azure" ]]; then
+          if [[ -z "$ACCOUNT" ]]; then
+            echo "::error::Azure requires 'account' (subscription ID)."
+            exit 1
+          fi
+          if [[ -n "$CLUSTER" && -z "${{ inputs.azure_resource_group }}" ]]; then
+            echo "::error::For AKS, 'azure_resource_group' is required."
+            exit 1
+          fi
+          if [[ "$LOGIN" == "true" && -z "${{ steps.config.outputs.acr_registry }}" ]]; then
+            echo "::error::For ACR login, 'acr_registry' is required."
+            exit 1
+          fi
+        fi
+
+        echo "= Authenticating to $PROVIDER ..."
+
+    # 4) AWS (always via KoalaOps/login-aws)
+    - name: AWS login
       if: steps.config.outputs.provider == 'aws'
       uses: KoalaOps/login-aws@v1
       with:
-        aws_region: ${{ steps.config.outputs.region }}
+        aws_region: ${{ steps.config.outputs.location }}
         role_to_assume: ${{ inputs.aws_role_to_assume }}
         role_duration: ${{ inputs.aws_session_duration }}
-        enable_ecr_login: ${{ inputs.login_to_container_registry }}
+        aws_access_key_id: ${{ inputs.aws_access_key_id }}
+        aws_secret_access_key: ${{ inputs.aws_secret_access_key }}
         eks_cluster_name: ${{ inputs.cluster }}
+        enable_ecr_login: ${{ inputs.login_to_container_registry }}
         ecr_repositories: ${{ steps.config.outputs.repositories }}
-    
-    - name: Configure AWS credentials (non-OIDC)
-      if: steps.config.outputs.provider == 'aws' && inputs.aws_role_to_assume == '' && inputs.aws_access_key_id != ''
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ inputs.aws_access_key_id }}
-        aws-secret-access-key: ${{ inputs.aws_secret_access_key }}
-        aws-region: ${{ steps.config.outputs.region }}
-    
-    - name: Setup kubectl for EKS (non-OIDC)
-      if: steps.config.outputs.provider == 'aws' && inputs.aws_role_to_assume == '' && inputs.cluster != ''
-      shell: bash
-      run: |
-        aws eks update-kubeconfig \
-          --name ${{ inputs.cluster }} \
-          --region ${{ steps.config.outputs.region }}
-    
-    # GCP Authentication
-    - name: Login to GCP with GKE
-      if: inputs.provider == 'gcp' && inputs.cluster != ''
+
+    # 5) GCP (always via KoalaOps/login-gcp-gke)
+    - name: GCP login
+      if: steps.config.outputs.provider == 'gcp'
       uses: KoalaOps/login-gcp-gke@v1
       with:
         credentials_json: ${{ inputs.gcp_credentials_json }}
         workload_identity_provider: ${{ inputs.gcp_workload_identity_provider }}
         service_account: ${{ inputs.gcp_service_account }}
-        project_id: ${{ inputs.account }}
-        location: ${{ inputs.region }}
+        project_id: ${{ steps.config.outputs.account }}
+        location: ${{ steps.config.outputs.location }}
         cluster_name: ${{ inputs.cluster }}
+        # login to GAR unless user turned it off
         skip_gar_login: ${{ inputs.login_to_container_registry != 'true' }}
-    
-    - name: Login to GCP without GKE
-      if: inputs.provider == 'gcp' && inputs.cluster == ''
-      uses: google-github-actions/auth@v2
+
+    # 6) Azure (beta) — unified via a KoalaOps action
+    - name: Azure login
+      if: steps.config.outputs.provider == 'azure'
+      uses: KoalaOps/login-azure-aks@v1
       with:
-        credentials_json: ${{ inputs.gcp_credentials_json }}
-        workload_identity_provider: ${{ inputs.gcp_workload_identity_provider }}
-        service_account: ${{ inputs.gcp_service_account }}
-        project_id: ${{ inputs.account }}
-    
-    - name: Setup gcloud SDK
-      if: inputs.provider == 'gcp' && inputs.cluster == ''
-      uses: google-github-actions/setup-gcloud@v2
-      with:
-        project_id: ${{ inputs.account }}
-    
-    - name: Configure Docker for GAR
-      if: inputs.provider == 'gcp' && inputs.login_to_container_registry == 'true' && inputs.cluster == ''
-      shell: bash
-      run: |
-        # Determine registry based on region
-        if [[ "${{ inputs.region }}" == us-* ]]; then
-          REGISTRY="us-docker.pkg.dev"
-        elif [[ "${{ inputs.region }}" == europe-* ]]; then
-          REGISTRY="europe-docker.pkg.dev"
-        elif [[ "${{ inputs.region }}" == asia-* ]]; then
-          REGISTRY="asia-docker.pkg.dev"
-        else
-          REGISTRY="${{ inputs.region }}-docker.pkg.dev"
-        fi
-        
-        gcloud auth configure-docker "$REGISTRY" --quiet
-    
-    # Azure Authentication (beta)
-    - name: Login to Azure with Service Principal
-      if: steps.config.outputs.provider == 'azure' && inputs.azure_client_id != ''
-      uses: azure/login@v2
-      with:
-        client-id: ${{ inputs.azure_client_id }}
-        client-secret: ${{ inputs.azure_client_secret }}
-        tenant-id: ${{ inputs.azure_tenant_id }}
-        subscription-id: ${{ inputs.azure_subscription_id || steps.config.outputs.account }}
-    
-    - name: Login to Azure with Managed Identity
-      if: steps.config.outputs.provider == 'azure' && inputs.azure_client_id == ''
-      uses: azure/login@v2
-      with:
-        subscription-id: ${{ inputs.azure_subscription_id || steps.config.outputs.account }}
-    
-    - name: Setup kubectl for AKS
-      if: steps.config.outputs.provider == 'azure' && inputs.cluster != ''
-      uses: azure/aks-set-context@v4
-      with:
-        cluster-name: ${{ inputs.cluster }}
-        resource-group: ${{ steps.config.outputs.region }}
-        subscription-id: ${{ inputs.azure_subscription_id || steps.config.outputs.account }}
-    
-    - name: Login to ACR
-      if: steps.config.outputs.provider == 'azure' && inputs.login_to_container_registry == 'true'
-      shell: bash
-      run: |
-        # Use explicit ACR registry name or fall back to config
-        ACR_NAME="${{ steps.config.outputs.acr_registry }}"
-        if [[ -z "$ACR_NAME" && -n "${{ inputs.cluster }}" ]]; then
-          ACR_NAME="${{ inputs.cluster }}acr"
-        fi
-        
-        # Login to ACR
-        az acr login --name "$ACR_NAME" 2>/dev/null || {
-          echo "::warning::Could not login to ACR $ACR_NAME. It may not exist or you may lack permissions."
-        }
-    
-    # GitHub Container Registry Authentication
-    - name: Login to GitHub Container Registry
+        subscription_id: ${{ steps.config.outputs.account }}
+        resource_group: ${{ inputs.azure_resource_group }}
+        cluster_name: ${{ inputs.cluster }}
+        client_id: ${{ inputs.azure_client_id }}
+        client_secret: ${{ inputs.azure_client_secret }}
+        tenant_id: ${{ inputs.azure_tenant_id }}
+        enable_acr_login: ${{ inputs.login_to_container_registry }}
+        acr_registry: ${{ steps.config.outputs.acr_registry }}
+
+    # 7) GHCR / Docker Hub
+    - name: GHCR login
       if: steps.config.outputs.provider == 'github' && inputs.login_to_container_registry == 'true'
       uses: docker/login-action@v3
       with:
         registry: ghcr.io
         username: ${{ github.actor }}
         password: ${{ inputs.github_token || github.token }}
-    
-    # Docker Hub Authentication
-    - name: Login to Docker Hub
+
+    - name: Docker Hub login
       if: steps.config.outputs.provider == 'dockerhub' && inputs.login_to_container_registry == 'true'
       uses: docker/login-action@v3
       with:
         username: ${{ inputs.dockerhub_username }}
         password: ${{ inputs.dockerhub_token }}
-    
-    # Extract outputs
-    - name: Set account ID
-      id: account
+
+    # 8) Outputs
+    - name: Output account
+      id: out-account
       shell: bash
       run: |
-        PROVIDER="${{ steps.config.outputs.provider }}"
-        
-        if [[ "$PROVIDER" == "aws" ]]; then
-          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
-        elif [[ "$PROVIDER" == "gcp" ]]; then
-          ACCOUNT="${{ steps.config.outputs.account }}"
-        elif [[ "$PROVIDER" == "azure" ]]; then
-          ACCOUNT="${{ inputs.azure_subscription_id || steps.config.outputs.account }}"
+        set -Eeuo pipefail
+        PROV="${{ steps.config.outputs.provider }}"
+        if [[ "$PROV" == "aws" ]]; then
+          ACC="$(aws sts get-caller-identity --query Account --output text 2>/dev/null || true)"
+          [[ -z "$ACC" ]] && ACC="unknown"
+        elif [[ "$PROV" == "gcp" ]]; then
+          ACC="${{ steps.config.outputs.account }}"
+          [[ -z "$ACC" ]] && ACC="unknown"
+        elif [[ "$PROV" == "azure" ]]; then
+          ACC="${{ steps.config.outputs.account }}"
+          [[ -z "$ACC" ]] && ACC="unknown"
         else
-          ACCOUNT="unknown"
+          ACC="unknown"
         fi
-        
-        echo "id=$ACCOUNT" >> $GITHUB_OUTPUT
-    
-    - name: Set registry URL
-      id: registry
+        echo "id=$ACC" >> "$GITHUB_OUTPUT"
+
+    - name: Output registry URL
+      id: out-registry
       shell: bash
       run: |
-        PROVIDER="${{ steps.config.outputs.provider }}"
-        
-        if [[ "$PROVIDER" == "aws" && "${{ inputs.login_to_container_registry }}" == "true" ]]; then
-          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
-          REGISTRY="$ACCOUNT.dkr.ecr.${{ steps.config.outputs.region }}.amazonaws.com"
-        elif [[ "$PROVIDER" == "gcp" && "${{ inputs.login_to_container_registry }}" == "true" ]]; then
-          if [[ "${{ steps.config.outputs.region }}" == us-* ]]; then
-            REGISTRY="us-docker.pkg.dev/${{ steps.config.outputs.account }}"
-          elif [[ "${{ steps.config.outputs.region }}" == europe-* ]]; then
-            REGISTRY="europe-docker.pkg.dev/${{ steps.config.outputs.account }}"
-          elif [[ "${{ steps.config.outputs.region }}" == asia-* ]]; then
-            REGISTRY="asia-docker.pkg.dev/${{ steps.config.outputs.account }}"
-          else
-            REGISTRY="${{ steps.config.outputs.region }}-docker.pkg.dev/${{ steps.config.outputs.account }}"
-          fi
-        elif [[ "$PROVIDER" == "azure" && "${{ inputs.login_to_container_registry }}" == "true" ]]; then
-          # For Azure, construct ACR URL
-          ACR_NAME="${{ steps.config.outputs.acr_registry }}"
-          if [[ -z "$ACR_NAME" ]]; then
-            ACR_NAME="${{ inputs.cluster }}acr"
-          fi
-          REGISTRY="${ACR_NAME}.azurecr.io"
-        elif [[ "$PROVIDER" == "github" && "${{ inputs.login_to_container_registry }}" == "true" ]]; then
-          REGISTRY="ghcr.io"
-        elif [[ "$PROVIDER" == "dockerhub" && "${{ inputs.login_to_container_registry }}" == "true" ]]; then
-          REGISTRY="docker.io"
-        else
-          REGISTRY=""
+        set -Eeuo pipefail
+        URL=""
+        if [[ "${{ inputs.login_to_container_registry }}" == "true" ]]; then
+          case "${{ steps.config.outputs.provider }}" in
+            aws)
+              ACC="$(aws sts get-caller-identity --query Account --output text 2>/dev/null || true)"
+              if [[ -n "$ACC" && -n "${{ steps.config.outputs.location }}" ]]; then
+                URL="${ACC}.dkr.ecr.${{ steps.config.outputs.location }}.amazonaws.com"
+              fi
+              ;;
+            gcp)
+              LOC="${{ steps.config.outputs.location }}"
+              # If a zone was provided (e.g., us-central1-a), strip the trailing "-<letter>"
+              BASE="$LOC"
+              if [[ "$LOC" =~ ^[a-z]+-[a-z]+[0-9]-[a-z]$ ]]; then
+                BASE="${LOC%-?}"
+              fi
+              HOST="${BASE}-docker.pkg.dev"
+              if [[ -n "${{ steps.config.outputs.account }}" ]]; then
+                URL="${HOST}/${{ steps.config.outputs.account }}"
+              fi
+              ;;
+            azure)
+              if [[ -n "${{ steps.config.outputs.acr_registry }}" ]]; then
+                URL="${{ steps.config.outputs.acr_registry }}.azurecr.io"
+              fi
+              ;;
+            github)
+              URL="ghcr.io"
+              ;;
+            dockerhub)
+              URL="docker.io"
+              ;;
+          esac
         fi
-        
-        echo "url=$REGISTRY" >> $GITHUB_OUTPUT
-    
-    - name: Set kubectl context
-      id: kubectl
+        echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+    - name: Output kubectl context
+      id: out-kubectl
       shell: bash
       run: |
+        set -Eeuo pipefail
         if [[ -n "${{ inputs.cluster }}" ]]; then
-          CONTEXT=$(kubectl config current-context 2>/dev/null || echo "")
-          echo "context=$CONTEXT" >> $GITHUB_OUTPUT
+          CTX="$(kubectl config current-context 2>/dev/null || true)"
+          echo "context=${CTX}" >> "$GITHUB_OUTPUT"
         else
-          echo "context=" >> $GITHUB_OUTPUT
+          echo "context=" >> "$GITHUB_OUTPUT"
         fi
-    
-    - name: Set authentication status
-      id: status
+
+    - name: Output status & summary
+      id: out-status
       shell: bash
       run: |
-        echo "authenticated=true" >> $GITHUB_OUTPUT
-        
-        echo "### Cloud Authentication Summary " >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
-        echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-        echo "| **Provider** | ${{ steps.config.outputs.provider }} |" >> $GITHUB_STEP_SUMMARY
-        echo "| **Region** | ${{ steps.config.outputs.region }} |" >> $GITHUB_STEP_SUMMARY
-        echo "| **Account** | ${{ steps.account.outputs.id }} |" >> $GITHUB_STEP_SUMMARY
-        
-        if [[ -n "${{ steps.registry.outputs.url }}" ]]; then
-          echo "| **Registry** | ${{ steps.registry.outputs.url }} |" >> $GITHUB_STEP_SUMMARY
+        set -Eeuo pipefail
+        echo "authenticated=true" >> "$GITHUB_OUTPUT"
+
+        echo "### Cloud Authentication Summary" >> "$GITHUB_STEP_SUMMARY"
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Property | Value |" >> "$GITHUB_STEP_SUMMARY"
+        echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+        echo "| **Provider** | ${{ steps.config.outputs.provider }} |" >> "$GITHUB_STEP_SUMMARY"
+        echo "| **Location** | ${{ steps.config.outputs.location }} |" >> "$GITHUB_STEP_SUMMARY"
+        echo "| **Account** | ${{ steps.out-account.outputs.id }} |" >> "$GITHUB_STEP_SUMMARY"
+        if [[ -n "${{ steps.out-registry.outputs.url }}" ]]; then
+          echo "| **Registry** | ${{ steps.out-registry.outputs.url }} |" >> "$GITHUB_STEP_SUMMARY"
         fi
-        
-        if [[ -n "${{ steps.kubectl.outputs.context }}" ]]; then
-          echo "| **Cluster** | ${{ inputs.cluster }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Context** | ${{ steps.kubectl.outputs.context }} |" >> $GITHUB_STEP_SUMMARY
+        if [[ -n "${{ inputs.cluster }}" ]]; then
+          echo "| **Cluster** | ${{ inputs.cluster }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Context** | ${{ steps.out-kubectl.outputs.context }} |" >> "$GITHUB_STEP_SUMMARY"
         fi
