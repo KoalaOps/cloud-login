@@ -79,15 +79,32 @@ inputs:
     description: "Azure resource group for AKS"
     required: false
 
-  # GHCR / Docker Hub
+  # Generic registry inputs (works with any Docker Registry v2 API: Quay, Harbor, etc.)
+  registry_server:
+    description: "Container registry hostname (e.g., quay.io, ghcr.io, docker.io)"
+    required: false
+  registry_username:
+    description: "Registry username"
+    required: false
+  registry_password:
+    description: "Registry password or token"
+    required: false
+
+  # GHCR / Docker Hub / Quay (aliases for convenience - prefer registry_* inputs)
   github_token:
     description: "GitHub token for GHCR (defaults to GITHUB_TOKEN)"
     required: false
   dockerhub_username:
-    description: "Docker Hub username"
+    description: "Docker Hub username (alias for registry_username when provider=dockerhub)"
     required: false
   dockerhub_token:
-    description: "Docker Hub access token"
+    description: "Docker Hub access token (alias for registry_password when provider=dockerhub)"
+    required: false
+  quay_username:
+    description: "Quay username (alias for registry_username when provider=quay)"
+    required: false
+  quay_token:
+    description: "Quay token (alias for registry_password when provider=quay)"
     required: false
 
 outputs:
@@ -125,6 +142,17 @@ runs:
         # Provider resolution (+ mismatch check)
         INPUT_PROVIDER="${{ inputs.provider }}"
         PARSED_PROVIDER="${{ steps.parse.outputs.provider || '' }}"
+
+        # Auto-detect provider from registry_server if not set
+        if [[ -z "$INPUT_PROVIDER" && -n "${{ inputs.registry_server }}" ]]; then
+          case "${{ inputs.registry_server }}" in
+            ghcr.io) INPUT_PROVIDER="github" ;;
+            docker.io|registry-1.docker.io) INPUT_PROVIDER="dockerhub" ;;
+            quay.io) INPUT_PROVIDER="quay" ;;
+            *) INPUT_PROVIDER="registry" ;;
+          esac
+        fi
+
         if [[ -n "$INPUT_PROVIDER" && -n "$PARSED_PROVIDER" && "$INPUT_PROVIDER" != "$PARSED_PROVIDER" ]]; then
           echo "::error::Provider mismatch: input='$INPUT_PROVIDER' vs image-detected='$PARSED_PROVIDER'"
           exit 1
@@ -159,11 +187,33 @@ runs:
           REPOSITORIES="${{ steps.parse.outputs.repository }}"
         fi
 
+        # Registry configuration (handle aliases)
+        REGISTRY_SERVER="${{ inputs.registry_server || '' }}"
+        REGISTRY_USERNAME="${{ inputs.registry_username || '' }}"
+        REGISTRY_PASSWORD="${{ inputs.registry_password || '' }}"
+
+        # Apply provider-specific aliases
+        if [[ "$PROVIDER" == "dockerhub" ]]; then
+          [[ -z "$REGISTRY_SERVER" ]] && REGISTRY_SERVER="docker.io"
+          [[ -z "$REGISTRY_USERNAME" ]] && REGISTRY_USERNAME="${{ inputs.dockerhub_username || '' }}"
+          [[ -z "$REGISTRY_PASSWORD" ]] && REGISTRY_PASSWORD="${{ inputs.dockerhub_token || '' }}"
+        elif [[ "$PROVIDER" == "quay" ]]; then
+          [[ -z "$REGISTRY_SERVER" ]] && REGISTRY_SERVER="quay.io"
+          [[ -z "$REGISTRY_USERNAME" ]] && REGISTRY_USERNAME="${{ inputs.quay_username || '' }}"
+          [[ -z "$REGISTRY_PASSWORD" ]] && REGISTRY_PASSWORD="${{ inputs.quay_token || '' }}"
+        elif [[ "$PROVIDER" == "github" ]]; then
+          [[ -z "$REGISTRY_SERVER" ]] && REGISTRY_SERVER="ghcr.io"
+          # GHCR special case: can use GITHUB_TOKEN if no explicit creds
+        fi
+
         echo "provider=$PROVIDER" >> "$GITHUB_OUTPUT"
         echo "account=$ACCOUNT" >> "$GITHUB_OUTPUT"
         echo "location=$LOCATION" >> "$GITHUB_OUTPUT"
         echo "acr_registry=$ACR_REGISTRY" >> "$GITHUB_OUTPUT"
         echo "repositories=$REPOSITORIES" >> "$GITHUB_OUTPUT"
+        echo "registry_server=$REGISTRY_SERVER" >> "$GITHUB_OUTPUT"
+        echo "registry_username=$REGISTRY_USERNAME" >> "$GITHUB_OUTPUT"
+        echo "registry_password=$REGISTRY_PASSWORD" >> "$GITHUB_OUTPUT"
 
     # 3) Minimal validation (pragmatic)
     - name: Validate inputs
@@ -175,15 +225,34 @@ runs:
         LOCATION="${{ steps.config.outputs.location }}"
         CLUSTER="${{ inputs.cluster }}"
         LOGIN="${{ inputs.login_to_container_registry }}"
+        REGISTRY_SERVER="${{ steps.config.outputs.registry_server }}"
+        REGISTRY_USERNAME="${{ steps.config.outputs.registry_username }}"
+        REGISTRY_PASSWORD="${{ steps.config.outputs.registry_password }}"
 
-        if [[ -z "$PROVIDER" ]]; then
-          echo "::error::Provide either 'image' or 'provider'."
+        # Allow no provider if registry_* inputs are provided
+        if [[ -z "$PROVIDER" && -z "$REGISTRY_SERVER" ]]; then
+          echo "::error::Provide either 'image', 'provider', or 'registry_server'."
           exit 1
         fi
-        case "$PROVIDER" in
-          aws|gcp|azure|github|dockerhub) ;;
-          *) echo "::error::Invalid provider: $PROVIDER"; exit 1 ;;
-        esac
+
+        # Validate provider if set
+        if [[ -n "$PROVIDER" ]]; then
+          case "$PROVIDER" in
+            aws|gcp|azure|github|dockerhub|quay|registry) ;;
+            *) echo "::error::Invalid provider: $PROVIDER"; exit 1 ;;
+          esac
+        fi
+
+        # Validate registry login requirements
+        if [[ "$LOGIN" == "true" && ( "$PROVIDER" == "quay" || "$PROVIDER" == "registry" || -n "$REGISTRY_SERVER" ) ]]; then
+          if [[ -z "$REGISTRY_USERNAME" || -z "$REGISTRY_PASSWORD" ]]; then
+            # Exception: GHCR can use defaults
+            if [[ "$PROVIDER" != "github" || ( -z "${{ inputs.github_token || github.token }}" ) ]]; then
+              echo "::error::Registry login requires 'registry_username' and 'registry_password' (or provider-specific aliases)."
+              exit 1
+            fi
+          fi
+        fi
 
         if [[ "$PROVIDER" == "aws" ]]; then
           if [[ -z "${{ inputs.aws_role_to_assume }}" && -z "${{ inputs.aws_access_key_id }}" ]]; then
@@ -262,21 +331,20 @@ runs:
         enable_acr_login: ${{ inputs.login_to_container_registry }}
         acr_registry: ${{ steps.config.outputs.acr_registry }}
 
-    # 7) GHCR / Docker Hub
-    - name: GHCR login
-      if: steps.config.outputs.provider == 'github' && inputs.login_to_container_registry == 'true'
+    # 7) Unified registry login (GHCR / Docker Hub / Quay / Generic)
+    - name: Registry login
+      if: |
+        inputs.login_to_container_registry == 'true' &&
+        (steps.config.outputs.provider == 'github' ||
+         steps.config.outputs.provider == 'dockerhub' ||
+         steps.config.outputs.provider == 'quay' ||
+         steps.config.outputs.provider == 'registry' ||
+         steps.config.outputs.registry_server != '')
       uses: docker/login-action@v3
       with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ inputs.github_token || github.token }}
-
-    - name: Docker Hub login
-      if: steps.config.outputs.provider == 'dockerhub' && inputs.login_to_container_registry == 'true'
-      uses: docker/login-action@v3
-      with:
-        username: ${{ inputs.dockerhub_username }}
-        password: ${{ inputs.dockerhub_token }}
+        registry: ${{ steps.config.outputs.registry_server }}
+        username: ${{ steps.config.outputs.registry_username != '' && steps.config.outputs.registry_username || (steps.config.outputs.provider == 'github' && github.actor || '') }}
+        password: ${{ steps.config.outputs.registry_password != '' && steps.config.outputs.registry_password || (steps.config.outputs.provider == 'github' && (inputs.github_token || github.token) || '') }}
 
     # 8) Outputs
     - name: Output account
@@ -330,11 +398,9 @@ runs:
                 URL="${{ steps.config.outputs.acr_registry }}.azurecr.io"
               fi
               ;;
-            github)
-              URL="ghcr.io"
-              ;;
-            dockerhub)
-              URL="docker.io"
+            github|dockerhub|quay|registry)
+              # Use the configured registry server
+              URL="${{ steps.config.outputs.registry_server }}"
               ;;
           esac
         fi

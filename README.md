@@ -1,13 +1,13 @@
 # Koala Cloud Login
 
-Unified cloud authentication for **AWS**, **GCP**, **Azure (beta)**, plus registry login for **ECR**, **GAR**, **ACR**, **GHCR**, and **Docker Hub** — with optional Kubernetes context setup.
+Unified cloud authentication for **AWS**, **GCP**, **Azure (beta)**, plus registry login for **ECR**, **GAR**, **ACR**, and any **Docker Registry v2** compatible registry (**GHCR**, **Docker Hub**, **Quay**, etc.) — with optional Kubernetes context setup.
 
 ## Highlights
 
 - 🔐 **One action** for AWS / GCP / Azure (beta) auth
-- 🔍 **Auto-detect by image** (e.g., `*.dkr.ecr.*.amazonaws.com`, `*.docker.pkg.dev`, `*.azurecr.io`, `ghcr.io`, `docker.io`)
+- 🔍 **Auto-detect by image** (e.g., `*.dkr.ecr.*.amazonaws.com`, `*.docker.pkg.dev`, `*.azurecr.io`, `ghcr.io`, `docker.io`, `quay.io`)
 - ☸️ **Kube context** setup when `cluster` is provided (EKS/GKE/AKS)
-- 🐳 **Registry login** for ECR/GAR/ACR/GHCR/Docker Hub
+- 🐳 **Registry login** for cloud registries (ECR/GAR/ACR) and standard registries (GHCR/Docker Hub/Quay/etc.)
 - 📦 **ECR repo ensure** (optional) for AWS
 - 🔄 Works with OIDC (recommended) or keys/creds
 
@@ -140,6 +140,29 @@ permissions:
     dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
 ```
 
+### Quay.io (login only)
+
+```yaml
+- uses: KoalaOps/cloud-login@v1
+  with:
+    provider: quay
+    login_to_container_registry: true
+    quay_username: ${{ secrets.QUAY_USERNAME }}  # e.g., myorg+robot
+    quay_token: ${{ secrets.QUAY_TOKEN }}
+```
+
+### Any Docker Registry (Harbor, Artifactory, self-hosted, etc.)
+
+```yaml
+# Preferred: Use generic registry_* inputs for any Docker Registry v2 compatible registry
+- uses: KoalaOps/cloud-login@v1
+  with:
+    login_to_container_registry: true
+    registry_server: registry.example.com
+    registry_username: ${{ secrets.REGISTRY_USERNAME }}
+    registry_password: ${{ secrets.REGISTRY_PASSWORD }}
+```
+
 ---
 
 ## Inputs
@@ -147,7 +170,7 @@ permissions:
 | Input                         | Description                                                                                  | Required When                                                   |
 | ----------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
 | `image`                       | Image URL to auto-detect provider/account/location/registry                                  | If you prefer auto-detect                                       |
-| `provider`                    | One of `aws`, `gcp`, `azure`, `github`, `dockerhub`                                          | If not using `image`                                            |
+| `provider`                    | One of `aws`, `gcp`, `azure`, `github`, `dockerhub`, `quay`, `registry`                      | If not using `image`                                            |
 | `account`                     | AWS account ID / GCP project ID / Azure subscription ID                                      | GCP with GKE or GAR; Azure; optional for AWS (resolved via STS) |
 | `location`                    | **AWS:** region. **GCP:** location (`us`, `europe`, `asia`, `us-central1`, `us-central1-a`). | AWS/GCP when cluster or registry login is used                  |
 | `cluster`                     | Kubernetes cluster name (EKS/GKE/AKS)                                                        | If you want kubecontext configured                              |
@@ -167,9 +190,13 @@ Optional: `aws_session_duration` (default `3600`)
 Alternative: Managed Identity (via `azure/login@v2` without client/secret; subscription ID still needed)  
 `azure_subscription_id` (alias for `account`), `azure_resource_group` (for AKS)
 
-**GHCR / Docker Hub**  
-`github_token` (defaults to `GITHUB_TOKEN`)  
-`dockerhub_username`, `dockerhub_token`
+**Standard Docker Registries (recommended approach)**
+`registry_server`, `registry_username`, `registry_password` - Works with any Docker Registry v2 API
+
+**Registry-specific aliases (for convenience)**
+`github_token` (defaults to `GITHUB_TOKEN` for GHCR)
+`dockerhub_username`, `dockerhub_token` (aliases for registry_* when provider=dockerhub)
+`quay_username`, `quay_token` (aliases for registry_* when provider=quay)
 
 ---
 
@@ -177,8 +204,8 @@ Alternative: Managed Identity (via `azure/login@v2` without client/secret; subsc
 
 | Output            | Description                                                                                                               |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `account_id`      | Resolved cloud account/subscription/project (or `unknown` for GHCR/Docker Hub)                                            |
-| `registry_url`    | Base registry URL (e.g., `123456789.dkr.ecr.us-east-1.amazonaws.com`, `us-docker.pkg.dev/my-project`, `myacr.azurecr.io`) |
+| `account_id`      | Resolved cloud account/subscription/project (or `unknown` for standard registries)                                        |
+| `registry_url`    | Base registry URL (e.g., `123456789.dkr.ecr.us-east-1.amazonaws.com`, `us-docker.pkg.dev/my-project`, `myacr.azurecr.io`, `quay.io`) |
 | `kubectl_context` | The current kubectl context (if `cluster` given)                                                                          |
 | `authenticated`   | `"true"` if the action completed without auth errors                                                                      |
 
@@ -190,7 +217,7 @@ Alternative: Managed Identity (via `azure/login@v2` without client/secret; subsc
 2. **Normalize & validate** minimal inputs based on what you want (kubecontext, registry login).
 3. **Authenticate** to the cloud using OIDC (recommended) or credentials.
 4. **Kubecontext** — if `cluster` is set, configure EKS/GKE/AKS context.
-5. **Registry login** — if enabled, log in to ECR/GAR/ACR/GHCR/Docker Hub; ensure ECR repos if requested.
+5. **Registry login** — if enabled, log in to cloud-native registries (ECR/GAR/ACR) or standard Docker registries (GHCR/Docker Hub/Quay/etc.); ensure ECR repos if requested.
 6. **Outputs** — emit `account_id`, `registry_url`, `kubectl_context`, `authenticated`.
 
 ---
