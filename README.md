@@ -9,6 +9,7 @@ Unified cloud authentication for **AWS**, **GCP**, **Azure (beta)**, plus regist
 - ☸️ **Kube context** setup when `cluster` is provided (EKS/GKE/AKS)
 - 🐳 **Registry login** for cloud registries (ECR/GAR/ACR) and standard registries (GHCR/Docker Hub/Quay/etc.)
 - 📦 **ECR repo ensure** (optional) for AWS
+- 📦 **CodeArtifact** package manager authentication (npm, pip, etc.) for AWS
 - 🔄 Works with OIDC (recommended) or keys/creds
 
 > **Location model:** Use a single `location` input.
@@ -74,6 +75,26 @@ permissions:
     repositories: my-svc
     aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
     aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+```
+
+### AWS + CodeArtifact (npm)
+
+```yaml
+permissions:
+  id-token: write
+  contents: read
+
+- uses: KoalaOps/cloud-login@v1
+  with:
+    provider: aws
+    location: us-east-1
+    aws_role_to_assume: ${{ vars.AWS_BUILD_ROLE }}
+    aws_codeartifact_domain: my-artifacts
+    aws_codeartifact_repository: npm-store
+    aws_codeartifact_tool: npm
+
+- name: Install dependencies
+  run: npm install
 ```
 
 ### GCP (GKE + GAR login)
@@ -178,9 +199,15 @@ permissions:
 | `repositories`                | AWS ECR repos to ensure exist (comma-separated)                                              | Optional (AWS only)                                             |
 | `acr_registry`                | Azure ACR name (e.g., `myacrname`)                                                           | Required if Azure + registry login                              |
 
-**AWS auth**  
-`aws_role_to_assume` (recommended), or `aws_access_key_id` + `aws_secret_access_key`  
+**AWS auth**
+`aws_role_to_assume` (recommended), or `aws_access_key_id` + `aws_secret_access_key`
 Optional: `aws_session_duration` (default `3600`)
+
+**AWS CodeArtifact** (package manager authentication)
+`aws_codeartifact_domain` - Domain name
+`aws_codeartifact_repository` - Repository name
+`aws_codeartifact_tool` - Tool to configure (npm, pip, twine, dotnet, nuget, swift)
+Optional: `aws_codeartifact_region` (defaults to `location`), `aws_codeartifact_domain_owner` (defaults to authenticated account), `aws_codeartifact_duration` (default `43200` = 12 hours)
 
 **GCP auth**  
 `gcp_workload_identity_provider`, `gcp_service_account`, or `gcp_credentials_json`
@@ -226,6 +253,7 @@ Alternative: Managed Identity (via `azure/login@v2` without client/secret; subsc
 
 - **GHCR:** pushing requires `permissions: packages: write`.
 - **AWS OIDC:** allow `sts:AssumeRoleWithWebIdentity`; ECR login requires basic ECR permissions; repo creation needs `ecr:CreateRepository`.
+- **AWS CodeArtifact:** requires `codeartifact:GetAuthorizationToken`, `codeartifact:GetRepositoryEndpoint`, `codeartifact:ReadFromRepository`, and `sts:GetServiceBearerToken` (with condition for `codeartifact.amazonaws.com`); publishing needs `codeartifact:PublishPackageVersion` and `codeartifact:PutPackageMetadata`.
 - **GCP:** GAR needs `roles/artifactregistry.writer` (push) or `reader` (pull); GKE needs `container.clusterViewer`.
 - **Azure:** ACR `AcrPull`/`AcrPush` as needed; AKS cluster user permissions for kubecontext.
 

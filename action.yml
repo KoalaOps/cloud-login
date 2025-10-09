@@ -90,6 +90,27 @@ inputs:
     description: "Registry password or token"
     required: false
 
+  # AWS CodeArtifact inputs (package manager authentication)
+  aws_codeartifact_domain:
+    description: "AWS CodeArtifact domain name"
+    required: false
+  aws_codeartifact_repository:
+    description: "AWS CodeArtifact repository name"
+    required: false
+  aws_codeartifact_tool:
+    description: "Tool to configure for CodeArtifact (npm, pip, twine, dotnet, nuget, swift)"
+    required: false
+  aws_codeartifact_region:
+    description: "Region for CodeArtifact (defaults to location/aws_region if not specified)"
+    required: false
+  aws_codeartifact_domain_owner:
+    description: "AWS account ID that owns the CodeArtifact domain (defaults to authenticated account)"
+    required: false
+  aws_codeartifact_duration:
+    description: "Duration of the CodeArtifact token in seconds"
+    required: false
+    default: "43200"
+
   # GHCR / Docker Hub / Quay (aliases for convenience - prefer registry_* inputs)
   github_token:
     description: "GitHub token for GHCR (defaults to GITHUB_TOKEN)"
@@ -302,6 +323,12 @@ runs:
         eks_cluster_name: ${{ inputs.cluster }}
         enable_ecr_login: ${{ inputs.login_to_container_registry }}
         ecr_repositories: ${{ steps.config.outputs.repositories }}
+        codeartifact_domain: ${{ inputs.aws_codeartifact_domain }}
+        codeartifact_repository: ${{ inputs.aws_codeartifact_repository }}
+        codeartifact_tool: ${{ inputs.aws_codeartifact_tool }}
+        codeartifact_region: ${{ inputs.aws_codeartifact_region }}
+        codeartifact_domain_owner: ${{ inputs.aws_codeartifact_domain_owner }}
+        codeartifact_duration: ${{ inputs.aws_codeartifact_duration }}
 
     # 5) GCP (always via KoalaOps/login-gcp-gke)
     - name: GCP login
