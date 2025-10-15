@@ -98,7 +98,7 @@ inputs:
     description: "AWS CodeArtifact repository name"
     required: false
   aws_codeartifact_tool:
-    description: "Tool to configure for CodeArtifact (npm, pip, twine, dotnet, nuget, swift)"
+    description: "Tool to configure for CodeArtifact (npm, pip, twine, dotnet, nuget, swift, maven, gradle)"
     required: false
   aws_codeartifact_region:
     description: "Region for CodeArtifact (defaults to location/aws_region if not specified)"

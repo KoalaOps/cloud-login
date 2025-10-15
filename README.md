@@ -9,7 +9,7 @@ Unified cloud authentication for **AWS**, **GCP**, **Azure (beta)**, plus regist
 - ☸️ **Kube context** setup when `cluster` is provided (EKS/GKE/AKS)
 - 🐳 **Registry login** for cloud registries (ECR/GAR/ACR) and standard registries (GHCR/Docker Hub/Quay/etc.)
 - 📦 **ECR repo ensure** (optional) for AWS
-- 📦 **CodeArtifact** package manager authentication (npm, pip, etc.) for AWS
+- 📦 **CodeArtifact** package manager authentication (npm, pip, maven, gradle, etc.) for AWS
 - 🔄 Works with OIDC (recommended) or keys/creds
 
 > **Location model:** Use a single `location` input.
@@ -96,6 +96,28 @@ permissions:
 - name: Install dependencies
   run: npm install
 ```
+
+### AWS + CodeArtifact (Maven)
+
+```yaml
+permissions:
+  id-token: write
+  contents: read
+
+- uses: KoalaOps/cloud-login@v1
+  with:
+    provider: aws
+    location: us-east-1
+    aws_role_to_assume: ${{ vars.AWS_BUILD_ROLE }}
+    aws_codeartifact_domain: my-artifacts
+    aws_codeartifact_repository: maven-repo
+    aws_codeartifact_tool: maven
+
+- name: Build with Maven
+  run: mvn clean install
+```
+
+**Note:** For Maven/Gradle, configure your `settings.xml` or `build.gradle` to use the `CODEARTIFACT_AUTH_TOKEN` and `CODEARTIFACT_REPO_URL` environment variables. See [login-aws README](https://github.com/KoalaOps/login-aws#codeartifact-for-maven) for detailed configuration examples.
 
 ### GCP (GKE + GAR login)
 
@@ -206,8 +228,10 @@ Optional: `aws_session_duration` (default `3600`)
 **AWS CodeArtifact** (package manager authentication)
 `aws_codeartifact_domain` - Domain name
 `aws_codeartifact_repository` - Repository name
-`aws_codeartifact_tool` - Tool to configure (npm, pip, twine, dotnet, nuget, swift)
+`aws_codeartifact_tool` - Tool to configure (npm, pip, twine, dotnet, nuget, swift, maven, gradle)
 Optional: `aws_codeartifact_region` (defaults to `location`), `aws_codeartifact_domain_owner` (defaults to authenticated account), `aws_codeartifact_duration` (default `43200` = 12 hours)
+
+**Note:** For Maven/Gradle, this action exports `CODEARTIFACT_AUTH_TOKEN` and `CODEARTIFACT_REPO_URL` environment variables. See the login-aws action README for configuration examples.
 
 **GCP auth**  
 `gcp_workload_identity_provider`, `gcp_service_account`, or `gcp_credentials_json`
