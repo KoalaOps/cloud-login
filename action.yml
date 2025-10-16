@@ -110,6 +110,10 @@ inputs:
     description: "Duration of the CodeArtifact token in seconds"
     required: false
     default: "43200"
+  aws_codeartifact_output_token:
+    description: "Output the CodeArtifact token instead of using aws codeartifact login (useful for Docker builds)"
+    required: false
+    default: "false"
 
   # GHCR / Docker Hub / Quay (aliases for convenience - prefer registry_* inputs)
   github_token:
@@ -329,6 +333,7 @@ runs:
         codeartifact_region: ${{ inputs.aws_codeartifact_region }}
         codeartifact_domain_owner: ${{ inputs.aws_codeartifact_domain_owner }}
         codeartifact_duration: ${{ inputs.aws_codeartifact_duration }}
+        codeartifact_output_token: ${{ inputs.aws_codeartifact_output_token }}
 
     # 5) GCP (always via KoalaOps/login-gcp-gke)
     - name: GCP login
