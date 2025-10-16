@@ -229,9 +229,9 @@ Optional: `aws_session_duration` (default `3600`)
 `aws_codeartifact_domain` - Domain name
 `aws_codeartifact_repository` - Repository name
 `aws_codeartifact_tool` - Tool to configure (npm, pip, twine, dotnet, nuget, swift, maven, gradle)
-Optional: `aws_codeartifact_region` (defaults to `location`), `aws_codeartifact_domain_owner` (defaults to authenticated account), `aws_codeartifact_duration` (default `43200` = 12 hours)
+Optional: `aws_codeartifact_region` (defaults to `location`), `aws_codeartifact_domain_owner` (defaults to authenticated account), `aws_codeartifact_duration` (default `43200` = 12 hours), `aws_codeartifact_output_token` (default `false` - set to `true` for Docker builds)
 
-**Note:** For Maven/Gradle, this action exports `CODEARTIFACT_AUTH_TOKEN` and `CODEARTIFACT_REPO_URL` environment variables. See the login-aws action README for configuration examples.
+**Note:** For Maven/Gradle, this action always exports `CODEARTIFACT_AUTH_TOKEN` and `CODEARTIFACT_REPO_URL` environment variables. For other tools (npm, pip, etc.), set `aws_codeartifact_output_token: 'true'` to get token-based auth (useful for Docker builds). See the login-aws action README for configuration examples.
 
 **GCP auth**  
 `gcp_workload_identity_provider`, `gcp_service_account`, or `gcp_credentials_json`
