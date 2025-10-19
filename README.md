@@ -56,12 +56,14 @@ permissions:
 - uses: KoalaOps/cloud-login@v1
   with:
     provider: aws
+    account: "123456789012"  # AWS account ID
     location: us-east-1
     cluster: eks-prod
     login_to_container_registry: true
     # Ensure one or more repos exist (comma-separated)
     repositories: backend,frontend
-    aws_role_to_assume: ${{ vars.AWS_DEPLOY_ROLE }}
+    # Can use full ARN or just role name (ARN will be constructed automatically)
+    aws_role_to_assume: GitHubActionsRole  # or arn:aws:iam::123456789012:role/GitHubActionsRole
 ```
 
 ### AWS (Access keys) + ECR login (no cluster)
@@ -222,7 +224,10 @@ permissions:
 | `acr_registry`                | Azure ACR name (e.g., `myacrname`)                                                           | Required if Azure + registry login                              |
 
 **AWS auth**
-`aws_role_to_assume` (recommended), or `aws_access_key_id` + `aws_secret_access_key`
+`aws_role_to_assume` - IAM role ARN or role name (recommended OIDC method)
+  - Can be a full ARN: `arn:aws:iam::123456789012:role/GitHubActionsRole`
+  - Or just the role name: `GitHubActionsRole` (requires `account` to be set)
+`aws_access_key_id` + `aws_secret_access_key` - Alternative auth method
 Optional: `aws_session_duration` (default `3600`)
 
 **AWS CodeArtifact** (package manager authentication)
@@ -266,10 +271,11 @@ Alternative: Managed Identity (via `azure/login@v2` without client/secret; subsc
 
 1. **Parse** (optional) — if `image` is set, auto-detect provider/account/location/repo.
 2. **Normalize & validate** minimal inputs based on what you want (kubecontext, registry login).
-3. **Authenticate** to the cloud using OIDC (recommended) or credentials.
-4. **Kubecontext** — if `cluster` is set, configure EKS/GKE/AKS context.
-5. **Registry login** — if enabled, log in to cloud-native registries (ECR/GAR/ACR) or standard Docker registries (GHCR/Docker Hub/Quay/etc.); ensure ECR repos if requested.
-6. **Outputs** — emit `account_id`, `registry_url`, `kubectl_context`, `authenticated`.
+3. **Prepare credentials** — for AWS, automatically construct full IAM role ARN if only role name is provided (using `account` input).
+4. **Authenticate** to the cloud using OIDC (recommended) or credentials.
+5. **Kubecontext** — if `cluster` is set, configure EKS/GKE/AKS context.
+6. **Registry login** — if enabled, log in to cloud-native registries (ECR/GAR/ACR) or standard Docker registries (GHCR/Docker Hub/Quay/etc.); ensure ECR repos if requested.
+7. **Outputs** — emit `account_id`, `registry_url`, `kubectl_context`, `authenticated`.
 
 ---
 

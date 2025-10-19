@@ -314,13 +314,49 @@ runs:
 
         echo "= Authenticating to $PROVIDER ..."
 
-    # 4) AWS (always via KoalaOps/login-aws)
+    # 4) AWS - Prepare role ARN if needed
+    - name: Prepare AWS role ARN
+      id: aws-role
+      if: steps.config.outputs.provider == 'aws'
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        ROLE_INPUT="${{ inputs.aws_role_to_assume }}"
+        ACCOUNT="${{ steps.config.outputs.account }}"
+
+        # If no role provided, skip
+        if [[ -z "$ROLE_INPUT" ]]; then
+          echo "role_arn=" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        # Check if it's already a full ARN
+        if [[ "$ROLE_INPUT" =~ ^arn:aws:iam::[0-9]{12}:role/.+ ]]; then
+          echo "Role is already a full ARN: $ROLE_INPUT"
+          echo "role_arn=$ROLE_INPUT" >> "$GITHUB_OUTPUT"
+        else
+          # Not a full ARN - construct it
+          if [[ -z "$ACCOUNT" ]]; then
+            echo "::error::To use role name instead of full ARN, 'account' (AWS account ID) must be provided"
+            exit 1
+          fi
+
+          # Construct the ARN
+          ROLE_ARN="arn:aws:iam::${ACCOUNT}:role/${ROLE_INPUT}"
+          echo "Constructing role ARN from account and role name:"
+          echo "  Account: $ACCOUNT"
+          echo "  Role name: $ROLE_INPUT"
+          echo "  Full ARN: $ROLE_ARN"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+        fi
+
+    # 5) AWS login (always via KoalaOps/login-aws)
     - name: AWS login
       if: steps.config.outputs.provider == 'aws'
       uses: KoalaOps/login-aws@v1
       with:
         aws_region: ${{ steps.config.outputs.location }}
-        role_to_assume: ${{ inputs.aws_role_to_assume }}
+        role_to_assume: ${{ steps.aws-role.outputs.role_arn }}
         role_duration: ${{ inputs.aws_session_duration }}
         aws_access_key_id: ${{ inputs.aws_access_key_id }}
         aws_secret_access_key: ${{ inputs.aws_secret_access_key }}
@@ -335,7 +371,7 @@ runs:
         codeartifact_duration: ${{ inputs.aws_codeartifact_duration }}
         codeartifact_output_token: ${{ inputs.aws_codeartifact_output_token }}
 
-    # 5) GCP (always via KoalaOps/login-gcp-gke)
+    # 6) GCP (always via KoalaOps/login-gcp-gke)
     - name: GCP login
       if: steps.config.outputs.provider == 'gcp'
       uses: KoalaOps/login-gcp-gke@v1
@@ -349,7 +385,7 @@ runs:
         # login to GAR unless user turned it off
         skip_gar_login: ${{ inputs.login_to_container_registry != 'true' }}
 
-    # 6) Azure (beta) — unified via a KoalaOps action
+    # 7) Azure (beta) — unified via a KoalaOps action
     - name: Azure login
       if: steps.config.outputs.provider == 'azure'
       uses: KoalaOps/login-azure-aks@v1
@@ -363,7 +399,7 @@ runs:
         enable_acr_login: ${{ inputs.login_to_container_registry }}
         acr_registry: ${{ steps.config.outputs.acr_registry }}
 
-    # 7) Unified registry login (GHCR / Docker Hub / Quay / Generic)
+    # 8) Unified registry login (GHCR / Docker Hub / Quay / Generic)
     - name: Registry login
       if: |
         inputs.login_to_container_registry == 'true' &&
@@ -378,7 +414,7 @@ runs:
         username: ${{ steps.config.outputs.registry_username != '' && steps.config.outputs.registry_username || (steps.config.outputs.provider == 'github' && github.actor || '') }}
         password: ${{ steps.config.outputs.registry_password != '' && steps.config.outputs.registry_password || (steps.config.outputs.provider == 'github' && (inputs.github_token || github.token) || '') }}
 
-    # 8) Outputs
+    # 9) Outputs
     - name: Output account
       id: out-account
       shell: bash
