@@ -1,4 +1,4 @@
-# Koala Cloud Login
+# Skyhook Cloud Login
 
 Unified cloud authentication for **AWS**, **GCP**, **Azure (beta)**, plus registry login for **ECR**, **GAR**, **ACR**, and any **Docker Registry v2** compatible registry (**GHCR**, **Docker Hub**, **Quay**, etc.) — with optional Kubernetes context setup.
 
@@ -29,7 +29,7 @@ permissions:
   packages: write   # only if you'll push to GHCR
 
 - name: Cloud login (auto)
-  uses: KoalaOps/cloud-login@v1
+  uses: skyhook-io/cloud-login@v1
   with:
     image: 123456789.dkr.ecr.us-east-1.amazonaws.com/my-svc
     login_to_container_registry: true
@@ -53,7 +53,7 @@ permissions:
   id-token: write
   contents: read
 
-- uses: KoalaOps/cloud-login@v1
+- uses: skyhook-io/cloud-login@v1
   with:
     provider: aws
     account: "123456789012"  # AWS account ID
@@ -69,7 +69,7 @@ permissions:
 ### AWS (Access keys) + ECR login (no cluster)
 
 ```yaml
-- uses: KoalaOps/cloud-login@v1
+- uses: skyhook-io/cloud-login@v1
   with:
     provider: aws
     location: eu-central-1
@@ -86,7 +86,7 @@ permissions:
   id-token: write
   contents: read
 
-- uses: KoalaOps/cloud-login@v1
+- uses: skyhook-io/cloud-login@v1
   with:
     provider: aws
     location: us-east-1
@@ -107,7 +107,7 @@ permissions:
   id-token: write
   contents: read
 
-- uses: KoalaOps/cloud-login@v1
+- uses: skyhook-io/cloud-login@v1
   with:
     provider: aws
     location: us-east-1
@@ -121,7 +121,7 @@ permissions:
   run: mvn clean install
 ```
 
-**Note:** For Maven/Gradle, configure your `settings.xml` or `build.gradle` to use the `CODEARTIFACT_AUTH_TOKEN` and `CODEARTIFACT_REPO_URL` environment variables. See [login-aws README](https://github.com/KoalaOps/login-aws#codeartifact-for-maven) for detailed configuration examples.
+**Note:** For Maven/Gradle, configure your `settings.xml` or `build.gradle` to use the `CODEARTIFACT_AUTH_TOKEN` and `CODEARTIFACT_REPO_URL` environment variables. See [login-aws README](https://github.com/skyhook-io/login-aws#codeartifact-for-maven) for detailed configuration examples.
 
 ### GCP (GKE + GAR login)
 
@@ -130,7 +130,7 @@ permissions:
   id-token: write
   contents: read
 
-- uses: KoalaOps/cloud-login@v1
+- uses: skyhook-io/cloud-login@v1
   with:
     provider: gcp
     account: my-project
@@ -148,7 +148,7 @@ permissions:
   id-token: write
   contents: read
 
-- uses: KoalaOps/cloud-login@v1
+- uses: skyhook-io/cloud-login@v1
   with:
     provider: azure
     account: ${{ vars.AZURE_SUBSCRIPTION_ID }}   # or set azure_subscription_id
@@ -169,7 +169,7 @@ permissions:
   contents: read
   packages: write
 
-- uses: KoalaOps/cloud-login@v1
+- uses: skyhook-io/cloud-login@v1
   with:
     provider: github
     login_to_container_registry: true
@@ -179,7 +179,7 @@ permissions:
 ### Docker Hub (login only)
 
 ```yaml
-- uses: KoalaOps/cloud-login@v1
+- uses: skyhook-io/cloud-login@v1
   with:
     provider: dockerhub
     login_to_container_registry: true
@@ -190,7 +190,7 @@ permissions:
 ### Quay.io (login only)
 
 ```yaml
-- uses: KoalaOps/cloud-login@v1
+- uses: skyhook-io/cloud-login@v1
   with:
     provider: quay
     login_to_container_registry: true
@@ -202,7 +202,7 @@ permissions:
 
 ```yaml
 # Preferred: Use generic registry_* inputs for any Docker Registry v2 compatible registry
-- uses: KoalaOps/cloud-login@v1
+- uses: skyhook-io/cloud-login@v1
   with:
     login_to_container_registry: true
     registry_server: registry.example.com

@@ -1,7 +1,7 @@
-name: Koala Cloud Login
+name: Skyhook Cloud Login
 description: |
   Unified cloud authentication with optional Kubernetes context and registry login.
-author: "KoalaOps"
+author: "Skyhook"
 
 branding:
   icon: "tag"
@@ -156,7 +156,7 @@ runs:
     - name: Parse image
       id: parse
       if: inputs.image != ''
-      uses: KoalaOps/parse-image-registry@v1
+      uses: skyhook-io/parse-image-registry@v1
       with:
         image: ${{ inputs.image }}
 
@@ -353,10 +353,10 @@ runs:
           echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
         fi
 
-    # 5) AWS login (always via KoalaOps/login-aws)
+    # 5) AWS login (always via skyhook-io/login-aws)
     - name: AWS login
       if: steps.config.outputs.provider == 'aws'
-      uses: KoalaOps/login-aws@v1
+      uses: skyhook-io/login-aws@v1
       with:
         aws_region: ${{ steps.config.outputs.location }}
         role_to_assume: ${{ steps.aws-role.outputs.role_arn }}
@@ -375,10 +375,10 @@ runs:
         codeartifact_namespace: ${{ inputs.aws_codeartifact_namespace }}
         codeartifact_output_token: ${{ inputs.aws_codeartifact_output_token }}
 
-    # 6) GCP (always via KoalaOps/login-gcp-gke)
+    # 6) GCP (always via skyhook-io/login-gcp-gke)
     - name: GCP login
       if: steps.config.outputs.provider == 'gcp'
-      uses: KoalaOps/login-gcp-gke@v1
+      uses: skyhook-io/login-gcp-gke@v1
       with:
         credentials_json: ${{ inputs.gcp_credentials_json }}
         workload_identity_provider: ${{ inputs.gcp_workload_identity_provider }}
@@ -389,10 +389,10 @@ runs:
         # login to GAR unless user turned it off
         skip_gar_login: ${{ inputs.login_to_container_registry != 'true' }}
 
-    # 7) Azure (beta) — unified via a KoalaOps action
+    # 7) Azure (beta) — unified via a Skyhook action
     - name: Azure login
       if: steps.config.outputs.provider == 'azure'
-      uses: KoalaOps/login-azure-aks@v1
+      uses: skyhook-io/login-azure-aks@v1
       with:
         subscription_id: ${{ steps.config.outputs.account }}
         resource_group: ${{ inputs.azure_resource_group }}
